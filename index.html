@@ -92,6 +92,61 @@ body {
 		</style>
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#050510">
+<style>html,body,#canvas{overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}</style>
+<script>
+/* Castle TIME mobile helpers (Android Chrome first):
+   - Chrome for Android only grants audio "user activation" on touchend/pointerup/click, not touchstart,
+     so we track every AudioContext the engine creates and resume it (plus a silent unlock buffer) on those events.
+   - Also resume after the tab comes back from background.
+   - Fullscreen + landscape lock is requested from a real gesture when the game sets window.__ctWantFS. */
+(function(){
+  var ctxs = []; window.__ctAudio = {ctxs: ctxs, unlocked: false};
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (AC) {
+    var P = class extends AC { constructor(){ super(...arguments); ctxs.push(this); } };
+    window.AudioContext = P; if (window.webkitAudioContext) window.webkitAudioContext = P;
+    if (location.search.indexOf('touchdebug') >= 0) {
+      /* test hook only: tap everything that reaches the speakers into an analyser to measure real output */
+      var cn = AudioNode.prototype.connect;
+      AudioNode.prototype.connect = function(d){
+        var r = cn.apply(this, arguments);
+        try { if (d === this.context.destination && !this.__ctA) { var c = this.context; if (!c.__ctAn) { c.__ctAn = c.createAnalyser(); c.__ctAn.fftSize = 2048; c.__ctAn.__ctA = true; } cn.call(this, c.__ctAn); } } catch (e) {}
+        return r;
+      };
+      window.__ctAudio.info = function(){
+        return ctxs.map(function(c){ var peak = 0; if (c.__ctAn) { var a = new Float32Array(2048); c.__ctAn.getFloatTimeDomainData(a); for (var i = 0; i < a.length; i++) peak = Math.max(peak, Math.abs(a[i])); }
+          return {state: c.state, time: +c.currentTime.toFixed(2), peak: +peak.toFixed(4)}; });
+      };
+    }
+  }
+  function unlock(){
+    for (var i = 0; i < ctxs.length; i++) {
+      var c = ctxs[i];
+      try {
+        if (c.state !== 'running' && c.state !== 'closed') c.resume();
+        if (!c.__ctSilent) { var b = c.createBuffer(1, 1, 22050), s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(0); c.__ctSilent = true; }
+      } catch (e) {}
+    }
+    window.__ctAudio.unlocked = ctxs.length > 0 && ctxs.every(function(c){ return c.state === 'running'; });
+    if (window.__ctWantFS) {
+      window.__ctWantFS = false;
+      var el = document.documentElement, rq = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (rq && !document.fullscreenElement) {
+        try {
+          var pr = rq.call(el, {navigationUI: 'hide'});
+          if (pr && pr.then) pr.then(function(){ if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); }).catch(function(){});
+        } catch (e) {}
+      }
+    }
+  }
+  ['touchend', 'pointerup', 'click', 'keydown'].forEach(function(t){ window.addEventListener(t, unlock, {capture: true, passive: true}); });
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) unlock(); });
+  window.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+})();
+</script>
 
 	</head>
 	<body>
@@ -111,7 +166,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":13353540,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":13355420,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
